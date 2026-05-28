@@ -1,0 +1,14 @@
+[tools]
+rust = "1.95.0"
+
+[env]
+CARGO_TERM_COLOR = "auto"
+
+[tasks.check]
+description = "Run all shelf verification checks"
+run = [
+    "cargo fmt --check",
+    "cargo check",
+    "cargo clippy --all-targets -- -D warnings",
+    "cargo test",
+]
