@@ -1,0 +1,3 @@
+scopes:
+    - name: src
+      description: Application logic and UI in src/; does not include docs, assets, or build artifacts.
