@@ -412,6 +412,7 @@ where
 {
     let root = shelf_root_program()?;
     let mut command = Command::new("sudo");
+    command.arg("--non-interactive");
     command.arg(root);
     let args = args.into_iter().map(Into::into).collect::<Vec<String>>();
     command.args(&args);

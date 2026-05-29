@@ -26,24 +26,33 @@ pub fn handle(event: Event, app: &mut App) -> Result<()> {
         return Ok(());
     }
 
-    if matches!(app.modal, Some(Modal::Confirm { .. })) {
-        match key.code {
-            KeyCode::Enter => app.enter(),
-            KeyCode::Esc | KeyCode::Char('n') => app.modal = None,
-            _ => {}
+    if let Some(modal) = &app.modal {
+        match modal {
+            Modal::Success(_) => {
+                app.dismiss_success();
+                return Ok(());
+            }
+            Modal::Confirm { .. } => {
+                match key.code {
+                    KeyCode::Enter => app.enter(),
+                    KeyCode::Esc | KeyCode::Char('n') => app.modal = None,
+                    _ => {}
+                }
+                return Ok(());
+            }
+            Modal::Error(_) | Modal::Progress | Modal::Input => {
+                match key.code {
+                    KeyCode::Esc | KeyCode::Enter => app.modal = None,
+                    _ => {}
+                }
+                return Ok(());
+            }
         }
-        return Ok(());
-    }
-    if app.modal.is_some() {
-        match key.code {
-            KeyCode::Esc | KeyCode::Enter => app.modal = None,
-            _ => {}
-        }
-        return Ok(());
     }
 
     match key.code {
-        KeyCode::Char('q') => app.should_quit = true,
+        KeyCode::Char(ch) if should_capture_text(app) => app.input_char(ch),
+        KeyCode::Char('q') if !should_capture_text(app) => app.back(),
         KeyCode::Char('?') => app.show_help(),
         KeyCode::Esc => app.back(),
         KeyCode::Enter => {
@@ -73,14 +82,13 @@ pub fn handle(event: Event, app: &mut App) -> Result<()> {
             }
         }
         KeyCode::Char('p') => {
-            if app.screen == Screen::Repair {
+            if app.screen == Screen::MountDetail {
                 app.repair_selected_or_all();
             } else {
                 app.apply_config();
             }
         }
         KeyCode::Char('s') => app.goto(Screen::Sources),
-        KeyCode::Char(ch) if should_capture_text(app) => app.input_char(ch),
         KeyCode::Backspace => app.backspace(),
         KeyCode::Tab
             if app.screen == Screen::AddMount && app.add_mount.step == WizardStep::LoginSource =>
@@ -104,4 +112,70 @@ fn should_capture_text(app: &App) -> bool {
 
 fn tui_io_error(source: std::io::Error) -> ShelfError {
     ShelfError::Validation(format!("terminal I/O failed: {source}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::mpsc;
+
+    use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+
+    use super::super::app::{App, Screen, SourceMode, WizardStep};
+    use super::handle;
+
+    fn key_event(code: KeyCode) -> Event {
+        Event::Key(KeyEvent::new(code, KeyModifiers::empty()))
+    }
+
+    #[test]
+    fn text_input_in_add_mount_does_not_trigger_shortcuts() {
+        let (tx, _) = mpsc::channel();
+        let mut app = App::new(tx);
+        app.goto(Screen::AddMount);
+        assert_eq!(app.add_mount.step, WizardStep::LocalFolder);
+
+        handle(key_event(KeyCode::Char('q')), &mut app).unwrap();
+
+        assert!(!app.should_quit, "'q' in text field must not quit");
+        assert_eq!(app.add_mount.local_folder, "q");
+    }
+
+    #[test]
+    fn text_input_in_add_source_does_not_trigger_shortcuts() {
+        let (tx, _) = mpsc::channel();
+        let mut app = App::new(tx);
+        app.screen = Screen::Sources;
+        app.source_mode = SourceMode::Add {
+            field: 0,
+            form: Default::default(),
+        };
+
+        handle(key_event(KeyCode::Char('a')), &mut app).unwrap();
+
+        assert_eq!(
+            app.screen,
+            Screen::Sources,
+            "'a' in text field must not navigate"
+        );
+        assert_eq!(
+            app.source_mode,
+            SourceMode::Add {
+                field: 0,
+                form: super::super::app::SourceForm {
+                    address: "a".into(),
+                    ..Default::default()
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn shortcuts_work_when_not_in_text_input() {
+        let (tx, _) = mpsc::channel();
+        let mut app = App::new(tx);
+
+        handle(key_event(KeyCode::Char('q')), &mut app).unwrap();
+
+        assert!(app.should_quit, "'q' outside text field must quit");
+    }
 }

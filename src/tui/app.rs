@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::sync::mpsc::Sender;
+use std::time::{Duration, Instant};
 
 use crate::config::{Config, MountConfig, SourceConfig};
 use crate::{paths, ShelfError};
@@ -13,7 +14,6 @@ pub enum Screen {
     MountDetail,
     Sources,
     SourceDetail,
-    Repair,
     Help,
 }
 
@@ -26,6 +26,7 @@ pub enum Modal {
     Error(String),
     Progress,
     Input,
+    Success(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,6 +36,19 @@ pub enum ConfirmAction {
     RemoveSource,
     Apply,
     Repair,
+    AddSource,
+    AddMount,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrivilegedAction {
+    Disconnect,
+    RemoveMount,
+    RemoveSource,
+    Apply,
+    Repair,
+    AddSource,
+    AddMount,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -102,6 +116,13 @@ pub struct App {
     pub source_mode: SourceMode,
     pub task: TaskState,
     pub should_quit: bool,
+    pub pending_sudo_action: Option<PrivilegedAction>,
+    pub auto_dismiss_at: Option<Instant>,
+    pending_mount: Option<MountConfig>,
+    pending_source_id: Option<String>,
+    pending_source_form: Option<SourceForm>,
+    pending_add_mount_form: Option<AddMountForm>,
+    last_completed_kind: Option<TaskKind>,
     task_tx: Sender<TaskMessage>,
 }
 
@@ -125,6 +146,13 @@ impl App {
             source_mode: SourceMode::List,
             task: TaskState::Idle,
             should_quit: false,
+            pending_sudo_action: None,
+            auto_dismiss_at: None,
+            pending_mount: None,
+            pending_source_id: None,
+            pending_source_form: None,
+            pending_add_mount_form: None,
+            last_completed_kind: None,
             task_tx,
         }
     }
@@ -136,7 +164,7 @@ impl App {
 
     pub fn move_selection(&mut self, delta: isize) {
         let len = match self.screen {
-            Screen::Home | Screen::MountDetail | Screen::Repair => self.status_rows.len(),
+            Screen::Home | Screen::MountDetail => self.status_rows.len(),
             Screen::Sources | Screen::SourceDetail => self.config.sources.len(),
             Screen::AddMount if self.add_mount.step == WizardStep::LoginSource => {
                 self.config.sources.len()
@@ -179,7 +207,7 @@ impl App {
             Screen::Home => self.should_quit = true,
             Screen::Help => self.screen = self.previous_screen,
             Screen::AddMount => self.back_add_mount(),
-            Screen::MountDetail | Screen::Sources | Screen::Repair => self.goto(Screen::Home),
+            Screen::MountDetail | Screen::Sources => self.goto(Screen::Home),
             Screen::SourceDetail => self.goto(Screen::Sources),
         }
     }
@@ -209,7 +237,7 @@ impl App {
             self.modal = Some(Modal::Confirm {
                 action: ConfirmAction::Disconnect,
                 message: format!(
-                    "Disconnect {}?\n\nThis keeps the shelf config and will not delete remote files.",
+                    "Disconnect {}?\n\nThis keeps the shelf config and will not delete remote files.\n\nRequires sudo password.",
                     mount.local_path
                 ),
             });
@@ -221,7 +249,7 @@ impl App {
             self.modal = Some(Modal::Confirm {
                 action: ConfirmAction::RemoveMount,
                 message: format!(
-                    "Remove {} from Shelf?\n\nThis removes shelf config and systemd units. This will not delete remote files.",
+                    "Remove {} from Shelf?\n\nThis removes shelf config and systemd units. This will not delete remote files.\n\nRequires sudo password.",
                     mount.local_path
                 ),
             });
@@ -231,14 +259,14 @@ impl App {
     pub fn repair_selected_or_all(&mut self) {
         self.modal = Some(Modal::Confirm {
             action: ConfirmAction::Repair,
-            message: "Repair mount state?\n\nShelf will clean stacked mounts, apply config, and test write access where possible.".into(),
+            message: "Repair mount state?\n\nShelf will clean stacked mounts, apply config, and test write access where possible.\n\nRequires sudo password.".into(),
         });
     }
 
     pub fn apply_config(&mut self) {
         self.modal = Some(Modal::Confirm {
             action: ConfirmAction::Apply,
-            message: "Apply Shelf configuration?\n\nThis will mount remote paths, create local folders, write systemd units, and test write access.".into(),
+            message: "Apply Shelf configuration?\n\nThis will mount remote paths, create local folders, write systemd units, and test write access.\n\nRequires sudo password.".into(),
         });
     }
 
@@ -256,8 +284,18 @@ impl App {
                 *field += 1;
             } else {
                 let form = form.clone();
-                self.start_task(TaskKind::AddSource);
-                actions::spawn_add_source(self.task_tx.clone(), form);
+                self.modal = Some(Modal::Confirm {
+                    action: ConfirmAction::AddSource,
+                    message: format!(
+                        "Add login source {}?\n\nCredentials will be stored in a root-owned file.\n\nRequires sudo password.",
+                        if form.id.trim().is_empty() {
+                            "auto-named"
+                        } else {
+                            &form.id
+                        }
+                    ),
+                });
+                self.pending_source_form = Some(form);
                 self.source_mode = SourceMode::List;
             }
         }
@@ -268,7 +306,7 @@ impl App {
             self.modal = Some(Modal::Confirm {
                 action: ConfirmAction::RemoveSource,
                 message: format!(
-                    "Remove login source {}?\n\nMounts using this source must be removed first. Remote files are not touched.",
+                    "Remove login source {}?\n\nMounts using this source must be removed first. Remote files are not touched.\n\nRequires sudo password.",
                     source.id
                 ),
             });
@@ -358,27 +396,37 @@ impl App {
                 }
             }
             TaskMessage::Done { steps } => {
-                let should_refresh = matches!(
-                    self.task,
-                    TaskState::Running {
-                        kind: TaskKind::AddMount
-                            | TaskKind::AddSource
-                            | TaskKind::SetDefaultSource
-                            | TaskKind::Disconnect
-                            | TaskKind::RemoveMount
-                            | TaskKind::RemoveSource
-                            | TaskKind::Apply
-                            | TaskKind::Repair,
-                        ..
+                let kind = match &self.task {
+                    TaskState::Running { kind, .. } => *kind,
+                    _ => {
+                        self.task = TaskState::Done { steps };
+                        return;
                     }
-                );
+                };
                 self.task = TaskState::Done { steps };
-                if should_refresh {
-                    self.modal = Some(Modal::Progress);
-                } else if matches!(self.modal, Some(Modal::Progress)) {
-                    self.modal = None;
-                }
-                if should_refresh {
+
+                let needs_success_modal = matches!(
+                    kind,
+                    TaskKind::AddMount
+                        | TaskKind::AddSource
+                        | TaskKind::RemoveMount
+                        | TaskKind::RemoveSource
+                );
+
+                if needs_success_modal {
+                    self.last_completed_kind = Some(kind);
+                    let message = format!("{} completed", task_display_name(kind));
+                    self.modal = Some(Modal::Success(message));
+                    self.auto_dismiss_at = Some(Instant::now() + Duration::from_secs(1));
+                    self.refresh();
+                } else if kind == TaskKind::Refresh {
+                    if matches!(self.modal, Some(Modal::Progress)) {
+                        self.modal = None;
+                    }
+                } else {
+                    if matches!(self.modal, Some(Modal::Progress)) {
+                        self.modal = None;
+                    }
                     self.refresh();
                 }
             }
@@ -432,8 +480,15 @@ impl App {
                 }
             }
             WizardStep::Review => {
-                self.start_task(TaskKind::AddMount);
-                actions::spawn_add_mount(self.task_tx.clone(), self.add_mount.clone());
+                let add_mount = self.add_mount.clone();
+                self.modal = Some(Modal::Confirm {
+                    action: ConfirmAction::AddMount,
+                    message: format!(
+                        "Add mount {} -> {}?\n\nThis will mount the remote path, create local folders, write systemd units, and test write access.\n\nRequires sudo password.",
+                        add_mount.local_folder, add_mount.remote_path
+                    ),
+                });
+                self.pending_add_mount_form = Some(add_mount);
             }
         }
     }
@@ -453,7 +508,11 @@ impl App {
     fn confirm_modal(&mut self) {
         let action = match &self.modal {
             Some(Modal::Confirm { action, .. }) => *action,
-            Some(Modal::Error(_)) | Some(Modal::Progress) | Some(Modal::Input) | None => {
+            Some(Modal::Error(_))
+            | Some(Modal::Progress)
+            | Some(Modal::Input)
+            | Some(Modal::Success(_))
+            | None => {
                 self.modal = None;
                 return;
             }
@@ -462,30 +521,79 @@ impl App {
         match action {
             ConfirmAction::Disconnect => {
                 if let Some(mount) = self.selected_mount().cloned() {
-                    self.start_task(TaskKind::Disconnect);
-                    actions::spawn_disconnect(self.task_tx.clone(), mount);
+                    self.pending_mount = Some(mount);
+                    self.pending_sudo_action = Some(PrivilegedAction::Disconnect);
                 }
             }
             ConfirmAction::RemoveMount => {
                 if let Some(mount) = self.selected_mount().cloned() {
-                    self.start_task(TaskKind::RemoveMount);
-                    actions::spawn_remove_mount(self.task_tx.clone(), mount);
+                    self.pending_mount = Some(mount);
+                    self.pending_sudo_action = Some(PrivilegedAction::RemoveMount);
                 }
             }
             ConfirmAction::RemoveSource => {
                 if let Some(source) = self.selected_source().cloned() {
-                    self.start_task(TaskKind::RemoveSource);
-                    actions::spawn_remove_source(self.task_tx.clone(), source.id);
+                    self.pending_source_id = Some(source.id);
+                    self.pending_sudo_action = Some(PrivilegedAction::RemoveSource);
                 }
             }
             ConfirmAction::Apply => {
-                self.start_task(TaskKind::Apply);
-                actions::spawn_apply(self.task_tx.clone());
+                self.pending_sudo_action = Some(PrivilegedAction::Apply);
             }
             ConfirmAction::Repair => {
                 let mount = self.selected_mount().cloned();
+                self.pending_mount = mount;
+                self.pending_sudo_action = Some(PrivilegedAction::Repair);
+            }
+            ConfirmAction::AddSource => {
+                self.pending_sudo_action = Some(PrivilegedAction::AddSource);
+            }
+            ConfirmAction::AddMount => {
+                self.pending_sudo_action = Some(PrivilegedAction::AddMount);
+            }
+        }
+    }
+
+    pub fn execute_privileged_action(&mut self, action: PrivilegedAction) {
+        match action {
+            PrivilegedAction::Disconnect => {
+                if let Some(mount) = self.pending_mount.take() {
+                    self.start_task(TaskKind::Disconnect);
+                    actions::spawn_disconnect(self.task_tx.clone(), mount);
+                }
+            }
+            PrivilegedAction::RemoveMount => {
+                if let Some(mount) = self.pending_mount.take() {
+                    self.start_task(TaskKind::RemoveMount);
+                    actions::spawn_remove_mount(self.task_tx.clone(), mount);
+                }
+            }
+            PrivilegedAction::RemoveSource => {
+                if let Some(id) = self.pending_source_id.take() {
+                    self.start_task(TaskKind::RemoveSource);
+                    actions::spawn_remove_source(self.task_tx.clone(), id);
+                }
+            }
+            PrivilegedAction::Apply => {
+                self.start_task(TaskKind::Apply);
+                actions::spawn_apply(self.task_tx.clone());
+            }
+            PrivilegedAction::Repair => {
+                let mount = self.pending_mount.take();
                 self.start_task(TaskKind::Repair);
                 actions::spawn_repair(self.task_tx.clone(), mount);
+            }
+            PrivilegedAction::AddSource => {
+                if let Some(form) = self.pending_source_form.take() {
+                    self.start_task(TaskKind::AddSource);
+                    actions::spawn_add_source(self.task_tx.clone(), form);
+                }
+            }
+            PrivilegedAction::AddMount => {
+                if let Some(form) = self.pending_add_mount_form.take() {
+                    self.start_task(TaskKind::AddMount);
+                    actions::spawn_add_mount(self.task_tx.clone(), form);
+                }
             }
         }
     }
@@ -497,6 +605,21 @@ impl App {
         }
     }
 
+    pub fn dismiss_success(&mut self) {
+        self.auto_dismiss_at = None;
+        self.modal = None;
+        match self.last_completed_kind {
+            Some(TaskKind::AddMount) => self.goto(Screen::Home),
+            Some(TaskKind::AddSource) => {
+                self.source_mode = SourceMode::List;
+            }
+            Some(TaskKind::RemoveMount) => self.goto(Screen::Home),
+            Some(TaskKind::RemoveSource) => self.goto(Screen::Sources),
+            _ => {}
+        }
+        self.last_completed_kind = None;
+    }
+
     fn start_task(&mut self, kind: TaskKind) {
         self.task = TaskState::Running {
             kind,
@@ -505,6 +628,20 @@ impl App {
         if kind != TaskKind::Refresh {
             self.modal = Some(Modal::Progress);
         }
+    }
+}
+
+fn task_display_name(kind: TaskKind) -> &'static str {
+    match kind {
+        TaskKind::Refresh => "Refresh",
+        TaskKind::AddMount => "Add mount",
+        TaskKind::AddSource => "Add source",
+        TaskKind::SetDefaultSource => "Set default source",
+        TaskKind::Disconnect => "Disconnect",
+        TaskKind::RemoveMount => "Remove mount",
+        TaskKind::RemoveSource => "Remove source",
+        TaskKind::Apply => "Apply",
+        TaskKind::Repair => "Repair",
     }
 }
 
@@ -617,6 +754,86 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn mutating_task_done_shows_success_modal_and_sets_auto_dismiss() {
+        let (tx, _) = mpsc::channel();
+        let mut app = App::new(tx);
+        app.start_task(TaskKind::RemoveMount);
+
+        app.handle_task_message(TaskMessage::Done {
+            steps: steps_done_for_test(TaskKind::RemoveMount),
+        });
+
+        assert!(matches!(app.modal, Some(Modal::Success(_))));
+        assert!(app.auto_dismiss_at.is_some());
+        assert!(matches!(
+            app.last_completed_kind,
+            Some(TaskKind::RemoveMount)
+        ));
+    }
+
+    #[test]
+    fn non_mutating_task_done_does_not_show_success_modal() {
+        let (tx, _) = mpsc::channel();
+        let mut app = App::new(tx);
+        app.start_task(TaskKind::Apply);
+
+        app.handle_task_message(TaskMessage::Done {
+            steps: steps_done_for_test(TaskKind::Apply),
+        });
+
+        assert!(!matches!(app.modal, Some(Modal::Success(_))));
+        assert!(app.auto_dismiss_at.is_none());
+    }
+
+    #[test]
+    fn refresh_done_does_not_overwrite_last_completed_kind() {
+        let (tx, _) = mpsc::channel();
+        let mut app = App::new(tx);
+
+        app.start_task(TaskKind::AddMount);
+        app.handle_task_message(TaskMessage::Done {
+            steps: steps_done_for_test(TaskKind::AddMount),
+        });
+        assert!(matches!(app.last_completed_kind, Some(TaskKind::AddMount)));
+
+        app.start_task(TaskKind::Refresh);
+        app.handle_task_message(TaskMessage::Done {
+            steps: steps_done_for_test(TaskKind::Refresh),
+        });
+
+        assert!(matches!(app.last_completed_kind, Some(TaskKind::AddMount)));
+    }
+
+    #[test]
+    fn dismiss_success_navigates_after_add_mount() {
+        let (tx, _) = mpsc::channel();
+        let mut app = App::new(tx);
+        app.screen = Screen::AddMount;
+        app.last_completed_kind = Some(TaskKind::AddMount);
+        app.auto_dismiss_at = Some(Instant::now());
+
+        app.dismiss_success();
+
+        assert_eq!(app.screen, Screen::Home);
+        assert!(app.last_completed_kind.is_none());
+        assert!(app.auto_dismiss_at.is_none());
+    }
+
+    #[test]
+    fn dismiss_success_navigates_after_remove_source() {
+        let (tx, _) = mpsc::channel();
+        let mut app = App::new(tx);
+        app.screen = Screen::SourceDetail;
+        app.last_completed_kind = Some(TaskKind::RemoveSource);
+        app.auto_dismiss_at = Some(Instant::now());
+
+        app.dismiss_success();
+
+        assert_eq!(app.screen, Screen::Sources);
+        assert!(app.last_completed_kind.is_none());
     }
 
     fn steps_done_for_test(kind: TaskKind) -> Vec<TaskStep> {

@@ -1,5 +1,6 @@
 use std::io::{self, Stdout};
 use std::panic;
+use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -40,21 +41,52 @@ pub fn run() -> Result<()> {
             break;
         }
 
+        if let Some(action) = app.pending_sudo_action.take() {
+            terminal.suspend()?;
+            let ok = sudo_auth();
+            terminal.resume()?;
+            if ok {
+                app.execute_privileged_action(action);
+            } else {
+                app.modal = Some(app::Modal::Error(
+                    "sudo authentication failed. The operation was cancelled.".into(),
+                ));
+            }
+        }
+
         let timeout = Duration::from_millis(200).saturating_sub(last_tick.elapsed());
         if events::poll(timeout)? {
             let event = events::read()?;
             events::handle(event, &mut app)?;
         }
+        let now = Instant::now();
         if last_tick.elapsed() >= Duration::from_millis(200) {
-            last_tick = Instant::now();
+            last_tick = now;
+            if let Some(dismiss_at) = app.auto_dismiss_at {
+                if now >= dismiss_at {
+                    app.dismiss_success();
+                }
+            }
         }
     }
 
     Ok(())
 }
 
+fn sudo_auth() -> bool {
+    Command::new("sudo")
+        .arg("-v")
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
 struct TerminalGuard {
     terminal: TuiTerminal,
+    suspended: bool,
 }
 
 impl TerminalGuard {
@@ -71,7 +103,42 @@ impl TerminalGuard {
             hook(info);
         }));
 
-        Ok(Self { terminal })
+        Ok(Self {
+            terminal,
+            suspended: false,
+        })
+    }
+
+    fn suspend(&mut self) -> Result<()> {
+        if self.suspended {
+            return Ok(());
+        }
+        execute!(
+            self.terminal.backend_mut(),
+            LeaveAlternateScreen,
+            DisableMouseCapture
+        )
+        .map_err(tui_io_error)?;
+        let _ = disable_raw_mode();
+        let _ = self.terminal.show_cursor();
+        self.suspended = true;
+        Ok(())
+    }
+
+    fn resume(&mut self) -> Result<()> {
+        if !self.suspended {
+            return Ok(());
+        }
+        enable_raw_mode().map_err(tui_io_error)?;
+        execute!(
+            self.terminal.backend_mut(),
+            EnterAlternateScreen,
+            EnableMouseCapture
+        )
+        .map_err(tui_io_error)?;
+        self.terminal.clear().map_err(tui_io_error)?;
+        self.suspended = false;
+        Ok(())
     }
 }
 
@@ -95,6 +162,9 @@ impl std::ops::DerefMut for TerminalGuard {
 
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
+        if self.suspended {
+            return;
+        }
         let _ = disable_raw_mode();
         let _ = execute!(
             self.terminal.backend_mut(),
