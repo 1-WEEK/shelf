@@ -9,6 +9,32 @@ use ratatui::Frame;
 use super::actions::MountHealth;
 use super::app::{App, Modal, Screen, SourceMode, TaskState, WizardStep};
 
+// ── Style helpers ──────────────────────────────────────────────────────
+
+fn border_style() -> Style {
+    Style::default().fg(Color::DarkGray)
+}
+
+fn title_style() -> Style {
+    Style::default()
+        .fg(Color::Cyan)
+        .add_modifier(Modifier::BOLD)
+}
+
+fn bordered_block<'a>(title: &'a str) -> Block<'a> {
+    Block::default()
+        .title(title)
+        .title_style(title_style())
+        .borders(Borders::ALL)
+        .border_style(border_style())
+}
+
+fn dim_style() -> Style {
+    Style::default().fg(Color::DarkGray)
+}
+
+// ── Render entry ───────────────────────────────────────────────────────
+
 pub fn render(frame: &mut Frame, app: &App) {
     let area = frame.area();
     let chunks = Layout::default()
@@ -26,7 +52,6 @@ pub fn render(frame: &mut Frame, app: &App) {
         Screen::AddMount => render_add_mount(frame, chunks[1], app),
         Screen::MountDetail => render_mount_detail(frame, chunks[1], app),
         Screen::Sources | Screen::SourceDetail => render_sources(frame, chunks[1], app),
-        Screen::Repair => render_repair(frame, chunks[1], app),
         Screen::Help => render_help(frame, chunks[1]),
     }
     render_footer(frame, chunks[2], app);
@@ -38,28 +63,48 @@ pub fn render(frame: &mut Frame, app: &App) {
 
 fn render_header(frame: &mut Frame, area: Rect, app: &App) {
     let default_source = app.config.default_source.as_deref().unwrap_or("none");
-    let title =
-        format!("Shelf  |  remote storage control panel  |  default source: {default_source}");
+    let line = Line::from(vec![
+        Span::styled("( ͠° ͟ʖ ͡°)", Style::default().fg(Color::White)),
+        Span::styled(
+            " 𝙨𝙝𝙚𝙡𝙛",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" · remote storage control panel", dim_style()),
+        Span::styled(format!("   default: {default_source}"), dim_style()),
+    ]);
     frame.render_widget(
-        Paragraph::new(title)
-            .block(Block::default().borders(Borders::BOTTOM))
-            .style(Style::default().fg(Color::White).bg(Color::Black))
+        Paragraph::new(line)
+            .block(
+                Block::default()
+                    .borders(Borders::BOTTOM)
+                    .border_style(border_style()),
+            )
             .alignment(Alignment::Left),
         area,
     );
 }
 
+// ── Home ───────────────────────────────────────────────────────────────
+
 fn render_home(frame: &mut Frame, area: Rect, app: &App) {
     if app.status_rows.is_empty() {
+        let vchunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Percentage(35), Constraint::Min(3)])
+            .split(area);
         let text = vec![
             Line::from("No mounts configured."),
+            Line::from(""),
             Line::from("Press s to add a login source, then a to add a mount."),
         ];
         frame.render_widget(
             Paragraph::new(text)
-                .block(Block::default().title("Home").borders(Borders::ALL))
-                .wrap(Wrap { trim: true }),
-            area,
+                .block(bordered_block("Home"))
+                .wrap(Wrap { trim: true })
+                .alignment(Alignment::Center),
+            vchunks[1],
         );
         return;
     }
@@ -89,10 +134,12 @@ fn render_home(frame: &mut Frame, area: Rect, app: &App) {
                 .add_modifier(Modifier::BOLD),
         ),
     )
-    .block(Block::default().title("Home").borders(Borders::ALL))
+    .block(bordered_block("Home"))
     .row_highlight_style(selection_style());
     frame.render_stateful_widget(table, area, &mut state);
 }
+
+// ── Add Mount Wizard ───────────────────────────────────────────────────
 
 fn render_add_mount(frame: &mut Frame, area: Rect, app: &App) {
     let chunks = Layout::default()
@@ -108,12 +155,13 @@ fn render_add_mount(frame: &mut Frame, area: Rect, app: &App) {
     let step_line = steps
         .iter()
         .map(|(label, step)| {
-            let style = if *step == app.add_mount.step {
+            let is_active = *step == app.add_mount.step;
+            let style = if is_active {
                 Style::default()
                     .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD)
+                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
             } else {
-                Style::default().fg(Color::Gray)
+                dim_style()
             };
             Span::styled(format!(" {label} "), style)
         })
@@ -126,11 +174,7 @@ fn render_add_mount(frame: &mut Frame, area: Rect, app: &App) {
             Line::from(format!("Local folder: {}", app.add_mount.local_folder)),
             Line::from(format!("Remote path:  {}", app.add_mount.remote_path)),
         ])
-        .block(
-            Block::default()
-                .title("Add Mount Wizard")
-                .borders(Borders::ALL),
-        ),
+        .block(bordered_block("Add Mount Wizard")),
         chunks[0],
     );
 
@@ -155,7 +199,7 @@ fn render_add_mount(frame: &mut Frame, area: Rect, app: &App) {
 fn render_text_prompt(frame: &mut Frame, area: Rect, title: &str, body: &str) {
     frame.render_widget(
         Paragraph::new(body)
-            .block(Block::default().title(title).borders(Borders::ALL))
+            .block(bordered_block(title))
             .wrap(Wrap { trim: true }),
         area,
     );
@@ -180,7 +224,7 @@ fn render_source_picker(frame: &mut Frame, area: Rect, app: &App) {
         .collect::<Vec<_>>();
     let mut state = ratatui::widgets::ListState::default().with_selected(Some(app.selected_source));
     let list = List::new(items)
-        .block(Block::default().title("Login Source").borders(Borders::ALL))
+        .block(bordered_block("Login Source"))
         .highlight_style(selection_style());
     frame.render_stateful_widget(list, area, &mut state);
 }
@@ -193,26 +237,47 @@ fn render_review(frame: &mut Frame, area: Rect, app: &App) {
         .nth(app.add_mount.source_index)
         .map(|source| source.id.as_str())
         .unwrap_or("default");
+    let check_dim = Style::default().fg(Color::DarkGray);
     let text = vec![
         Line::from(format!("Local folder: {}", app.add_mount.local_folder)),
         Line::from(format!("Remote path:  {}", app.add_mount.remote_path)),
         Line::from(format!("Login source: {source}")),
         Line::from(""),
         Line::from("Shelf will:"),
-        Line::from("  [ ] check login source"),
-        Line::from("  [ ] mount remote path"),
-        Line::from("  [ ] create local folder if missing"),
-        Line::from("  [ ] bind local folder"),
-        Line::from("  [ ] enable startup restore"),
-        Line::from("  [ ] test write access"),
+        Line::from(vec![
+            Span::styled("  [ ] ", check_dim),
+            Span::from("check login source"),
+        ]),
+        Line::from(vec![
+            Span::styled("  [ ] ", check_dim),
+            Span::from("mount remote path"),
+        ]),
+        Line::from(vec![
+            Span::styled("  [ ] ", check_dim),
+            Span::from("create local folder if missing"),
+        ]),
+        Line::from(vec![
+            Span::styled("  [ ] ", check_dim),
+            Span::from("bind local folder"),
+        ]),
+        Line::from(vec![
+            Span::styled("  [ ] ", check_dim),
+            Span::from("enable startup restore"),
+        ]),
+        Line::from(vec![
+            Span::styled("  [ ] ", check_dim),
+            Span::from("test write access"),
+        ]),
     ];
     frame.render_widget(
         Paragraph::new(text)
-            .block(Block::default().title("Review").borders(Borders::ALL))
+            .block(bordered_block("Review"))
             .wrap(Wrap { trim: true }),
         area,
     );
 }
+
+// ── Mount Detail ───────────────────────────────────────────────────────
 
 fn render_mount_detail(frame: &mut Frame, area: Rect, app: &App) {
     let Some(row) = app.status_rows.get(app.selected_mount) else {
@@ -234,17 +299,17 @@ fn render_mount_detail(frame: &mut Frame, area: Rect, app: &App) {
         Line::from("Startup: enabled by Shelf apply"),
         Line::from("Writable: tested during apply and repair"),
         Line::from(""),
-        Line::from(
-            "x disconnect keeps config; d remove from Shelf keeps remote files; p apply/repair.",
-        ),
+        Line::from("x disconnect keeps config; d remove from Shelf keeps remote files; p repair."),
     ];
     frame.render_widget(
         Paragraph::new(text)
-            .block(Block::default().title("Mount Detail").borders(Borders::ALL))
+            .block(bordered_block("Mount Detail"))
             .wrap(Wrap { trim: true }),
         area,
     );
 }
+
+// ── Sources ────────────────────────────────────────────────────────────
 
 fn render_sources(frame: &mut Frame, area: Rect, app: &App) {
     if app.screen == Screen::SourceDetail {
@@ -284,11 +349,7 @@ fn render_sources(frame: &mut Frame, area: Rect, app: &App) {
             Line::from("Enter moves to the next field. Source id can be blank."),
         ];
         frame.render_widget(
-            Paragraph::new(text).block(
-                Block::default()
-                    .title("Add Login Source")
-                    .borders(Borders::ALL),
-            ),
+            Paragraph::new(text).block(bordered_block("Add Login Source")),
             area,
         );
         return;
@@ -312,11 +373,7 @@ fn render_sources(frame: &mut Frame, area: Rect, app: &App) {
         .collect::<Vec<_>>();
     let mut state = ratatui::widgets::ListState::default().with_selected(Some(app.selected_source));
     let list = List::new(items)
-        .block(
-            Block::default()
-                .title("Manage Sources")
-                .borders(Borders::ALL),
-        )
+        .block(bordered_block("Manage Sources"))
         .highlight_style(selection_style());
     frame.render_stateful_widget(list, area, &mut state);
 }
@@ -324,11 +381,7 @@ fn render_sources(frame: &mut Frame, area: Rect, app: &App) {
 fn render_source_detail(frame: &mut Frame, area: Rect, app: &App) {
     let Some(source) = app.config.sources.values().nth(app.selected_source) else {
         frame.render_widget(
-            Paragraph::new("No login source selected.").block(
-                Block::default()
-                    .title("Source Detail")
-                    .borders(Borders::ALL),
-            ),
+            Paragraph::new("No login source selected.").block(bordered_block("Source Detail")),
             area,
         );
         return;
@@ -360,87 +413,137 @@ fn render_source_detail(frame: &mut Frame, area: Rect, app: &App) {
     ];
     frame.render_widget(
         Paragraph::new(text)
-            .block(
-                Block::default()
-                    .title("Source Detail")
-                    .borders(Borders::ALL),
-            )
+            .block(bordered_block("Source Detail"))
             .wrap(Wrap { trim: true }),
         area,
     );
 }
 
-fn render_repair(frame: &mut Frame, area: Rect, _app: &App) {
-    let text = vec![
-        Line::from("Repair mount runs the same privileged boundary as the CLI."),
-        Line::from("It clears stacked mount layers for the selected mapping, reapplies config, and tests write access."),
-        Line::from(""),
-        Line::from("Press p to repair."),
-    ];
-    frame.render_widget(
-        Paragraph::new(text)
-            .block(Block::default().title("Repair").borders(Borders::ALL))
-            .wrap(Wrap { trim: true }),
-        area,
-    );
-}
+// ── Help ───────────────────────────────────────────────────────────────
 
 fn render_help(frame: &mut Frame, area: Rect) {
+    let term = Style::default()
+        .fg(Color::Yellow)
+        .add_modifier(Modifier::BOLD);
     let text = vec![
-        Line::from("Source: a saved login source for remote storage."),
-        Line::from("Remote path: the path inside that remote storage, for example /media/movies."),
-        Line::from("Mount: the mapping from a local folder to source:remote path."),
-        Line::from("Disconnect: unmounts the local folder and keeps Shelf config."),
-        Line::from("Remove from Shelf: removes Shelf config and systemd units. It does not delete remote files."),
-        Line::from("Repair: cleans stacked mounts, reapplies config, and tests write access."),
+        Line::from(vec![
+            Span::styled("Source", term),
+            Span::from(": a saved login source for remote storage."),
+        ]),
+        Line::from(vec![
+            Span::styled("Remote path", term),
+            Span::from(": the path inside that remote storage, for example /media/movies."),
+        ]),
+        Line::from(vec![
+            Span::styled("Mount", term),
+            Span::from(": the mapping from a local folder to source:remote path."),
+        ]),
+        Line::from(vec![
+            Span::styled("Disconnect", term),
+            Span::from(": unmounts the local folder and keeps Shelf config."),
+        ]),
+        Line::from(vec![
+            Span::styled("Remove from Shelf", term),
+            Span::from(
+                ": removes Shelf config and systemd units. It does not delete remote files.",
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("Repair", term),
+            Span::from(": cleans stacked mounts, reapplies config, and tests write access."),
+        ]),
     ];
     frame.render_widget(
         Paragraph::new(text)
-            .block(Block::default().title("Help").borders(Borders::ALL))
+            .block(bordered_block("Help"))
             .wrap(Wrap { trim: true }),
         area,
     );
 }
+
+// ── Footer ─────────────────────────────────────────────────────────────
 
 fn render_footer(frame: &mut Frame, area: Rect, app: &App) {
     let keys = match app.screen {
-        Screen::Home => "q quit  ? help  j/k move  Enter detail  a add mount  s sources  r refresh",
+        Screen::Home => {
+            "q quit  ? help  j/k move  Enter detail  a add  s sources  r refresh  p apply"
+        }
         Screen::AddMount => "Enter continue  Esc back  Tab source",
-        Screen::MountDetail => "Esc back  x disconnect  d remove from Shelf  p apply/repair",
+        Screen::MountDetail => "Esc back  x disconnect  d remove  p repair",
         Screen::Sources | Screen::SourceDetail => {
             "Esc back  a add source  d remove source  Enter set default/detail"
         }
-        Screen::Repair => "Esc back  p repair",
         Screen::Help => "Esc back",
     };
     frame.render_widget(
-        Paragraph::new(keys).style(Style::default().fg(Color::Gray)),
+        Paragraph::new(keys).style(dim_style()).block(
+            Block::default()
+                .borders(Borders::TOP)
+                .border_style(border_style()),
+        ),
         area,
     );
 }
+
+// ── Modal ──────────────────────────────────────────────────────────────
 
 fn render_modal(frame: &mut Frame, area: Rect, app: &App, modal: &Modal) {
     let block = centered_rect(64, 45, area);
     frame.render_widget(Clear, block);
     match modal {
-        Modal::Confirm { message, .. } => frame.render_widget(
-            Paragraph::new(format!("{message}\n\nEnter confirms. Esc cancels."))
-                .block(Block::default().title("Confirm").borders(Borders::ALL))
-                .wrap(Wrap { trim: true }),
-            block,
-        ),
-        Modal::Error(message) => frame.render_widget(
-            Paragraph::new(format!("{message}\n\nEsc closes this message."))
-                .block(
-                    Block::default()
-                        .title("Needs Attention")
-                        .borders(Borders::ALL),
-                )
-                .style(Style::default().fg(Color::Red))
-                .wrap(Wrap { trim: true }),
-            block,
-        ),
+        Modal::Confirm { message, .. } => {
+            let confirm_title = Span::styled("Confirm", title_style());
+            frame.render_widget(
+                Paragraph::new(format!("{message}\n\nEnter confirms. Esc cancels."))
+                    .block(
+                        Block::default()
+                            .title(confirm_title)
+                            .borders(Borders::ALL)
+                            .border_style(border_style()),
+                    )
+                    .wrap(Wrap { trim: true }),
+                block,
+            );
+        }
+        Modal::Error(message) => {
+            let error_title = Span::styled(
+                "Needs Attention",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            );
+            frame.render_widget(
+                Paragraph::new(format!("{message}\n\nEsc closes this message."))
+                    .block(
+                        Block::default()
+                            .title(error_title)
+                            .borders(Borders::ALL)
+                            .border_style(Style::default().fg(Color::Red)),
+                    )
+                    .style(Style::default().fg(Color::Red))
+                    .wrap(Wrap { trim: true }),
+                block,
+            );
+        }
         Modal::Progress => render_progress_modal(frame, block, app),
+        Modal::Success(message) => {
+            let success_title = Span::styled(
+                "Done",
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            );
+            frame.render_widget(
+                Paragraph::new(format!("{message}\n\nPress any key to dismiss."))
+                    .block(
+                        Block::default()
+                            .title(success_title)
+                            .borders(Borders::ALL)
+                            .border_style(Style::default().fg(Color::Green)),
+                    )
+                    .style(Style::default().fg(Color::Green))
+                    .wrap(Wrap { trim: true }),
+                block,
+            );
+        }
         Modal::Input => {}
     }
 }
@@ -454,7 +557,7 @@ fn render_progress_modal(frame: &mut Frame, area: Rect, app: &App) {
     };
     frame.render_widget(
         Paragraph::new(lines)
-            .block(Block::default().title("Progress").borders(Borders::ALL))
+            .block(bordered_block("Progress"))
             .wrap(Wrap { trim: true }),
         area,
     );
@@ -465,10 +568,19 @@ fn checklist_lines<'a>(
     steps: &'a [super::actions::TaskStep],
     error: Option<&'a str>,
 ) -> Vec<Line<'a>> {
+    let check_on = Style::default().fg(Color::Green);
+    let check_off = dim_style();
     let mut lines = vec![Line::from(title)];
     lines.extend(steps.iter().map(|step| {
-        let mark = if step.done { "[x]" } else { "[ ]" };
-        Line::from(format!("{mark} {}", step.label))
+        let (mark, style) = if step.done {
+            ("[x]", check_on)
+        } else {
+            ("[ ]", check_off)
+        };
+        Line::from(vec![
+            Span::styled(mark, style),
+            Span::from(format!(" {}", step.label)),
+        ])
     }));
     if let Some(error) = error {
         lines.push(Line::from(""));
@@ -476,6 +588,8 @@ fn checklist_lines<'a>(
     }
     lines
 }
+
+// ── Health / Selection ─────────────────────────────────────────────────
 
 fn health_label(health: MountHealth) -> (&'static str, Color) {
     match health {
@@ -488,10 +602,12 @@ fn health_label(health: MountHealth) -> (&'static str, Color) {
 
 fn selection_style() -> Style {
     Style::default()
-        .fg(Color::Black)
+        .fg(Color::Rgb(0, 0, 0))
         .bg(Color::Cyan)
         .add_modifier(Modifier::BOLD)
 }
+
+// ── Field marker ───────────────────────────────────────────────────────
 
 fn field_marker(current: usize, target: usize, label: &str) -> String {
     if current == target {
@@ -500,6 +616,8 @@ fn field_marker(current: usize, target: usize, label: &str) -> String {
         format!("  {label}")
     }
 }
+
+// ── Centered rect helper ───────────────────────────────────────────────
 
 fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
     let vertical = Layout::default()
@@ -520,6 +638,8 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
         .split(vertical[1])[1]
 }
 
+// ── Tests ──────────────────────────────────────────────────────────────
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
@@ -537,7 +657,7 @@ mod tests {
     fn selected_rows_use_readable_explicit_contrast() {
         let style = selection_style();
 
-        assert_eq!(style.fg, Some(Color::Black));
+        assert_eq!(style.fg, Some(Color::Rgb(0, 0, 0)));
         assert_eq!(style.bg, Some(Color::Cyan));
         assert!(style.add_modifier.contains(Modifier::BOLD));
     }
