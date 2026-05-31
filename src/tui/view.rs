@@ -9,16 +9,25 @@ use ratatui::Frame;
 use super::actions::MountHealth;
 use super::app::{App, Modal, Screen, SourceMode, TaskState, WizardStep};
 
+// ── Rose Pine palette (main variant) ──────────────────────────────────
+// Source: https://github.com/rose-pine/rose-pine-palette/blob/main/palette.json
+
+const RP_BASE: Color = Color::Rgb(0x19, 0x17, 0x24);
+const RP_MUTED: Color = Color::Rgb(0x6e, 0x6a, 0x86);
+const RP_SUBTLE: Color = Color::Rgb(0x90, 0x8c, 0xaa);
+const RP_LOVE: Color = Color::Rgb(0xeb, 0x6f, 0x92);
+const RP_GOLD: Color = Color::Rgb(0xf6, 0xc1, 0x77);
+const RP_FOAM: Color = Color::Rgb(0x9c, 0xcf, 0xd8);
+const RP_IRIS: Color = Color::Rgb(0xc4, 0xa7, 0xe7);
+
 // ── Style helpers ──────────────────────────────────────────────────────
 
 fn border_style() -> Style {
-    Style::default().fg(Color::DarkGray)
+    Style::default().fg(RP_MUTED)
 }
 
 fn title_style() -> Style {
-    Style::default()
-        .fg(Color::Cyan)
-        .add_modifier(Modifier::BOLD)
+    Style::default().fg(RP_IRIS).add_modifier(Modifier::BOLD)
 }
 
 fn bordered_block<'a>(title: &'a str) -> Block<'a> {
@@ -30,13 +39,11 @@ fn bordered_block<'a>(title: &'a str) -> Block<'a> {
 }
 
 fn dim_style() -> Style {
-    Style::default().fg(Color::DarkGray)
+    Style::default().fg(RP_SUBTLE)
 }
 
 fn key_style() -> Style {
-    Style::default()
-        .fg(Color::Yellow)
-        .add_modifier(Modifier::BOLD)
+    Style::default().fg(RP_GOLD).add_modifier(Modifier::BOLD)
 }
 
 fn action_hint<'a>(key: &'a str, body: &'a str) -> Line<'a> {
@@ -91,9 +98,7 @@ pub fn render(frame: &mut Frame, app: &App) {
 
 fn render_header(frame: &mut Frame, area: Rect, app: &App) {
     let default_source = app.config.default_source.as_deref().unwrap_or("none");
-    let wordmark = Style::default()
-        .fg(Color::Cyan)
-        .add_modifier(Modifier::BOLD);
+    let wordmark = Style::default().fg(RP_IRIS).add_modifier(Modifier::BOLD);
     let dim = dim_style();
     let lines = vec![
         Line::from(vec![
@@ -162,11 +167,8 @@ fn render_home(frame: &mut Frame, area: Rect, app: &App) {
         ],
     )
     .header(
-        Row::new(vec!["Local folder", "Remote path", "State"]).style(
-            Style::default()
-                .fg(Color::Gray)
-                .add_modifier(Modifier::BOLD),
-        ),
+        Row::new(vec!["Local folder", "Remote path", "State"])
+            .style(Style::default().fg(RP_SUBTLE).add_modifier(Modifier::BOLD)),
     )
     .block(bordered_block("Home"))
     .row_highlight_style(selection_style());
@@ -192,7 +194,7 @@ fn render_add_mount(frame: &mut Frame, area: Rect, app: &App) {
             let is_active = *step == app.add_mount.step;
             let style = if is_active {
                 Style::default()
-                    .fg(Color::Cyan)
+                    .fg(RP_IRIS)
                     .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
             } else {
                 dim_style()
@@ -264,7 +266,7 @@ fn render_review(frame: &mut Frame, area: Rect, app: &App) {
         .nth(app.add_mount.source_index)
         .map(|source| source.id.as_str())
         .unwrap_or("default");
-    let check_dim = Style::default().fg(Color::DarkGray);
+    let check_dim = Style::default().fg(RP_SUBTLE);
     let text = vec![
         Line::from(format!("Local folder: {}", app.add_mount.local_folder)),
         Line::from(format!("Remote path:  {}", app.add_mount.remote_path)),
@@ -445,9 +447,7 @@ fn render_source_detail(frame: &mut Frame, area: Rect, app: &App) {
 // ── Help ───────────────────────────────────────────────────────────────
 
 fn render_help(frame: &mut Frame, area: Rect) {
-    let term = Style::default()
-        .fg(Color::Yellow)
-        .add_modifier(Modifier::BOLD);
+    let term = Style::default().fg(RP_GOLD).add_modifier(Modifier::BOLD);
     let text = vec![
         Line::from(vec![
             Span::styled("Source", term),
@@ -531,7 +531,7 @@ fn render_modal(frame: &mut Frame, area: Rect, app: &App, modal: &Modal) {
         Modal::Error(message) => {
             let error_title = Span::styled(
                 "Needs Attention",
-                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                Style::default().fg(RP_LOVE).add_modifier(Modifier::BOLD),
             );
             frame.render_widget(
                 Paragraph::new(format!("{message}\n\nEsc closes this message."))
@@ -539,9 +539,9 @@ fn render_modal(frame: &mut Frame, area: Rect, app: &App, modal: &Modal) {
                         Block::default()
                             .title(error_title)
                             .borders(Borders::ALL)
-                            .border_style(Style::default().fg(Color::Red)),
+                            .border_style(Style::default().fg(RP_LOVE)),
                     )
-                    .style(Style::default().fg(Color::Red))
+                    .style(Style::default().fg(RP_LOVE))
                     .wrap(Wrap { trim: true }),
                 block,
             );
@@ -550,9 +550,7 @@ fn render_modal(frame: &mut Frame, area: Rect, app: &App, modal: &Modal) {
         Modal::Success(message) => {
             let success_title = Span::styled(
                 "Done",
-                Style::default()
-                    .fg(Color::Green)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(RP_FOAM).add_modifier(Modifier::BOLD),
             );
             frame.render_widget(
                 Paragraph::new(format!("{message}\n\nPress any key to dismiss."))
@@ -560,9 +558,9 @@ fn render_modal(frame: &mut Frame, area: Rect, app: &App, modal: &Modal) {
                         Block::default()
                             .title(success_title)
                             .borders(Borders::ALL)
-                            .border_style(Style::default().fg(Color::Green)),
+                            .border_style(Style::default().fg(RP_FOAM)),
                     )
-                    .style(Style::default().fg(Color::Green))
+                    .style(Style::default().fg(RP_FOAM))
                     .wrap(Wrap { trim: true }),
                 block,
             );
@@ -591,7 +589,7 @@ fn checklist_lines<'a>(
     steps: &'a [super::actions::TaskStep],
     error: Option<&'a str>,
 ) -> Vec<Line<'a>> {
-    let check_on = Style::default().fg(Color::Green);
+    let check_on = Style::default().fg(RP_FOAM);
     let check_off = dim_style();
     let mut lines = vec![Line::from(title)];
     lines.extend(steps.iter().map(|step| {
@@ -616,17 +614,17 @@ fn checklist_lines<'a>(
 
 fn health_label(health: MountHealth) -> (&'static str, Color) {
     match health {
-        MountHealth::Ready => ("mounted", Color::Green),
-        MountHealth::NeedsAttention => ("needs attention", Color::Yellow),
-        MountHealth::Missing => ("not mounted", Color::Yellow),
-        MountHealth::Broken => ("broken", Color::Red),
+        MountHealth::Ready => ("mounted", RP_FOAM),
+        MountHealth::NeedsAttention => ("needs attention", RP_GOLD),
+        MountHealth::Missing => ("not mounted", RP_GOLD),
+        MountHealth::Broken => ("broken", RP_LOVE),
     }
 }
 
 fn selection_style() -> Style {
     Style::default()
-        .fg(Color::Rgb(0, 0, 0))
-        .bg(Color::Cyan)
+        .fg(RP_BASE)
+        .bg(RP_IRIS)
         .add_modifier(Modifier::BOLD)
 }
 
@@ -680,8 +678,8 @@ mod tests {
     fn selected_rows_use_readable_explicit_contrast() {
         let style = selection_style();
 
-        assert_eq!(style.fg, Some(Color::Rgb(0, 0, 0)));
-        assert_eq!(style.bg, Some(Color::Cyan));
+        assert_eq!(style.fg, Some(RP_BASE));
+        assert_eq!(style.bg, Some(RP_IRIS));
         assert!(style.add_modifier.contains(Modifier::BOLD));
     }
 
