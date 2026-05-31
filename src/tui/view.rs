@@ -2,7 +2,8 @@ use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{
-    Block, Borders, Cell, Clear, List, ListItem, Paragraph, Row, Table, TableState, Wrap,
+    Block, BorderType, Borders, Cell, Clear, List, ListItem, Paragraph, Row, Table, TableState,
+    Wrap,
 };
 use ratatui::Frame;
 
@@ -35,7 +36,16 @@ fn bordered_block<'a>(title: &'a str) -> Block<'a> {
         .title(title)
         .title_style(title_style())
         .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
         .border_style(border_style())
+}
+
+fn modal_block<'a>(title: Span<'a>, accent: Color) -> Block<'a> {
+    Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(accent))
 }
 
 fn dim_style() -> Style {
@@ -571,12 +581,7 @@ fn render_modal(frame: &mut Frame, area: Rect, app: &App, modal: &Modal) {
             );
             frame.render_widget(
                 Paragraph::new(format!("{message}\n\nEnter confirms. Esc cancels."))
-                    .block(
-                        Block::default()
-                            .title(confirm_title)
-                            .borders(Borders::ALL)
-                            .border_style(Style::default().fg(accent)),
-                    )
+                    .block(modal_block(confirm_title, accent))
                     .wrap(Wrap { trim: true }),
                 block,
             );
@@ -588,12 +593,7 @@ fn render_modal(frame: &mut Frame, area: Rect, app: &App, modal: &Modal) {
             );
             frame.render_widget(
                 Paragraph::new(format!("{message}\n\nEsc closes this message."))
-                    .block(
-                        Block::default()
-                            .title(error_title)
-                            .borders(Borders::ALL)
-                            .border_style(Style::default().fg(RP_LOVE)),
-                    )
+                    .block(modal_block(error_title, RP_LOVE))
                     .style(Style::default().fg(RP_LOVE))
                     .wrap(Wrap { trim: true }),
                 block,
@@ -607,12 +607,7 @@ fn render_modal(frame: &mut Frame, area: Rect, app: &App, modal: &Modal) {
             );
             frame.render_widget(
                 Paragraph::new(format!("{message}\n\nPress any key to dismiss."))
-                    .block(
-                        Block::default()
-                            .title(success_title)
-                            .borders(Borders::ALL)
-                            .border_style(Style::default().fg(RP_FOAM)),
-                    )
+                    .block(modal_block(success_title, RP_FOAM))
                     .style(Style::default().fg(RP_FOAM))
                     .wrap(Wrap { trim: true }),
                 block,
