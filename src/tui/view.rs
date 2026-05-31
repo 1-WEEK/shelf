@@ -47,6 +47,20 @@ fn action_hint<'a>(key: &'a str, body: &'a str) -> Line<'a> {
     ])
 }
 
+fn source_list_item(source: &crate::config::SourceConfig, is_default: bool) -> ListItem<'static> {
+    let mut spans = vec![
+        Span::raw(source.id.clone()),
+        Span::styled(
+            format!("  {}@{}", source.username, source.address),
+            dim_style(),
+        ),
+    ];
+    if is_default {
+        spans.push(Span::styled("  [default]", key_style()));
+    }
+    ListItem::new(Line::from(spans))
+}
+
 // ── Render entry ───────────────────────────────────────────────────────
 
 pub fn render(frame: &mut Frame, app: &App) {
@@ -231,15 +245,8 @@ fn render_source_picker(frame: &mut Frame, area: Rect, app: &App) {
         .sources
         .values()
         .map(|source| {
-            let marker = if app.config.default_source.as_deref() == Some(&source.id) {
-                " default"
-            } else {
-                ""
-            };
-            ListItem::new(format!(
-                "{}{}  {} as {}",
-                source.id, marker, source.address, source.username
-            ))
+            let is_default = app.config.default_source.as_deref() == Some(&source.id);
+            source_list_item(source, is_default)
         })
         .collect::<Vec<_>>();
     let mut state = ratatui::widgets::ListState::default().with_selected(Some(app.selected_source));
@@ -382,15 +389,8 @@ fn render_sources(frame: &mut Frame, area: Rect, app: &App) {
         .sources
         .values()
         .map(|source| {
-            let marker = if app.config.default_source.as_deref() == Some(&source.id) {
-                " default"
-            } else {
-                ""
-            };
-            ListItem::new(format!(
-                "{}{}  {} as {}",
-                source.id, marker, source.address, source.username
-            ))
+            let is_default = app.config.default_source.as_deref() == Some(&source.id);
+            source_list_item(source, is_default)
         })
         .collect::<Vec<_>>();
     let mut state = ratatui::widgets::ListState::default().with_selected(Some(app.selected_source));
