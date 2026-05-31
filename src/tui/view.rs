@@ -158,7 +158,7 @@ fn render_home(frame: &mut Frame, area: Rect, app: &App) {
         [
             Constraint::Percentage(42),
             Constraint::Percentage(42),
-            Constraint::Length(16),
+            Constraint::Length(18),
         ],
     )
     .header(
