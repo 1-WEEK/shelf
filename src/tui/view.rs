@@ -33,6 +33,20 @@ fn dim_style() -> Style {
     Style::default().fg(Color::DarkGray)
 }
 
+fn key_style() -> Style {
+    Style::default()
+        .fg(Color::Yellow)
+        .add_modifier(Modifier::BOLD)
+}
+
+fn action_hint<'a>(key: &'a str, body: &'a str) -> Line<'a> {
+    Line::from(vec![
+        Span::styled(key, key_style()),
+        Span::raw("  "),
+        Span::raw(body),
+    ])
+}
+
 // ── Render entry ───────────────────────────────────────────────────────
 
 pub fn render(frame: &mut Frame, app: &App) {
@@ -305,7 +319,9 @@ fn render_mount_detail(frame: &mut Frame, area: Rect, app: &App) {
         Line::from("Startup: enabled by Shelf apply"),
         Line::from("Writable: tested during apply and repair"),
         Line::from(""),
-        Line::from("x disconnect keeps config; d remove from Shelf keeps remote files; p repair."),
+        action_hint("x", "disconnect (unmount, keep Shelf config)"),
+        action_hint("d", "remove from Shelf (clean units, keep remote files)"),
+        action_hint("p", "repair this mount"),
     ];
     frame.render_widget(
         Paragraph::new(text)
@@ -415,7 +431,8 @@ fn render_source_detail(frame: &mut Frame, area: Rect, app: &App) {
             source.owner_uid, source.owner_gid
         )),
         Line::from(""),
-        Line::from("Enter sets this as default. d removes the source when no mounts use it."),
+        action_hint("Enter", "set as default"),
+        action_hint("d", "remove (only when no mounts use this source)"),
     ];
     frame.render_widget(
         Paragraph::new(text)
