@@ -541,15 +541,23 @@ fn render_modal(frame: &mut Frame, area: Rect, app: &App, modal: &Modal) {
     let block = centered_rect(64, 45, area);
     frame.render_widget(Clear, block);
     match modal {
-        Modal::Confirm { message, .. } => {
-            let confirm_title = Span::styled("Confirm", title_style());
+        Modal::Confirm { action, message } => {
+            let (title_text, accent) = if action.is_destructive() {
+                ("Confirm destructive action", RP_LOVE)
+            } else {
+                ("Confirm", RP_IRIS)
+            };
+            let confirm_title = Span::styled(
+                title_text,
+                Style::default().fg(accent).add_modifier(Modifier::BOLD),
+            );
             frame.render_widget(
                 Paragraph::new(format!("{message}\n\nEnter confirms. Esc cancels."))
                     .block(
                         Block::default()
                             .title(confirm_title)
                             .borders(Borders::ALL)
-                            .border_style(border_style()),
+                            .border_style(Style::default().fg(accent)),
                     )
                     .wrap(Wrap { trim: true }),
                 block,

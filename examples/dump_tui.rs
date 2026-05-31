@@ -107,6 +107,12 @@ fn main() {
     dump("MountDetail", Screen::MountDetail);
     dump("Sources", Screen::Sources);
     dump("SourceDetail", Screen::SourceDetail);
-    dump_wizard("AddMount @ step 1", shelf::tui::app::WizardStep::LocalFolder);
-    dump_wizard("AddMount @ step 3", shelf::tui::app::WizardStep::LoginSource);
+    dump_wizard(
+        "AddMount @ step 1",
+        shelf::tui::app::WizardStep::LocalFolder,
+    );
+    dump_wizard(
+        "AddMount @ step 3",
+        shelf::tui::app::WizardStep::LoginSource,
+    );
 }

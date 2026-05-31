@@ -40,6 +40,12 @@ pub enum ConfirmAction {
     AddMount,
 }
 
+impl ConfirmAction {
+    pub fn is_destructive(self) -> bool {
+        matches!(self, Self::RemoveMount | Self::RemoveSource)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrivilegedAction {
     Disconnect,
