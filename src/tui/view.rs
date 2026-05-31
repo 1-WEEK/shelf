@@ -40,7 +40,7 @@ pub fn render(frame: &mut Frame, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),
+            Constraint::Length(4),
             Constraint::Min(4),
             Constraint::Length(2),
         ])
@@ -63,19 +63,26 @@ pub fn render(frame: &mut Frame, app: &App) {
 
 fn render_header(frame: &mut Frame, area: Rect, app: &App) {
     let default_source = app.config.default_source.as_deref().unwrap_or("none");
-    let line = Line::from(vec![
-        Span::styled("( ͠° ͟ʖ ͡°)", Style::default().fg(Color::White)),
-        Span::styled(
-            " 𝙨𝙝𝙚𝙡𝙛",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(" · remote storage control panel", dim_style()),
-        Span::styled(format!("   default: {default_source}"), dim_style()),
-    ]);
+    let wordmark = Style::default()
+        .fg(Color::Cyan)
+        .add_modifier(Modifier::BOLD);
+    let dim = dim_style();
+    let lines = vec![
+        Line::from(vec![
+            Span::styled(" ╭─╮ ╷ ╷ ╭─╮ ╷   ╭─╮     ", wordmark),
+            Span::styled("remote storage control panel", dim),
+        ]),
+        Line::from(vec![
+            Span::styled(" ╰─╮ ├─┤ ├─╴ │   ├─╴     ", wordmark),
+            Span::styled(format!("default: {default_source}"), dim),
+        ]),
+        Line::from(vec![
+            Span::styled(" ╰─╯ ╵ ╵ ╰─╯ ╰─╴ ╵       ", wordmark),
+            Span::styled(format!("v{}", env!("CARGO_PKG_VERSION")), dim),
+        ]),
+    ];
     frame.render_widget(
-        Paragraph::new(line)
+        Paragraph::new(lines)
             .block(
                 Block::default()
                     .borders(Borders::BOTTOM)
@@ -660,6 +667,43 @@ mod tests {
         assert_eq!(style.fg, Some(Color::Rgb(0, 0, 0)));
         assert_eq!(style.bg, Some(Color::Cyan));
         assert!(style.add_modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn header_wordmark_renders_three_rows_with_metadata() {
+        let (tx, _) = mpsc::channel();
+        let mut app = App::new(tx);
+        app.config.default_source = Some("nas-home".into());
+        app.config.sources = BTreeMap::from([(
+            "nas-home".into(),
+            SourceConfig {
+                id: "nas-home".into(),
+                address: "nas.local".into(),
+                username: "alice".into(),
+                owner_uid: 1000,
+                owner_gid: 1000,
+            },
+        )]);
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let buffer = terminal.backend().buffer().clone();
+
+        let row = |y: u16| -> String {
+            (0..80)
+                .map(|x| buffer[(x, y)].symbol().to_string())
+                .collect::<String>()
+                .trim_end()
+                .to_string()
+        };
+
+        assert_eq!(
+            row(0),
+            " \u{256d}\u{2500}\u{256e} \u{2577} \u{2577} \u{256d}\u{2500}\u{256e} \u{2577}   \u{256d}\u{2500}\u{256e}     remote storage control panel"
+        );
+        assert!(row(1).contains("default: nas-home"));
+        assert!(row(2).starts_with(" \u{2570}\u{2500}\u{256f}"));
     }
 
     #[test]
