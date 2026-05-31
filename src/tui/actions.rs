@@ -163,7 +163,7 @@ pub fn spawn_add_source(tx: Sender<TaskMessage>, form: SourceForm) {
         } else {
             Some(form.id)
         };
-        let id = config.add_source(form.address, form.username.clone(), name, true)?;
+        let id = config.add_source(form.address, form.username.clone(), name, false)?;
         progress(1, "store credential")?;
         run_sudo_shelf_root(
             [

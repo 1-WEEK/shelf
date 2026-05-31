@@ -260,20 +260,32 @@ mod tests {
     use super::*;
 
     #[test]
-    fn source_add_defaults_to_default_source() {
+    fn first_source_auto_becomes_default_without_flag() {
         let mut config = Config::default();
         let id = config
-            .add_source("192.168.1.10".into(), "alice".into(), None, true)
+            .add_source("192.168.1.10".into(), "alice".into(), None, false)
             .unwrap();
         assert_eq!(id, "192.168.1.10-alice");
         assert_eq!(config.default_source.as_deref(), Some("192.168.1.10-alice"));
     }
 
     #[test]
-    fn source_can_share_address_with_different_user() {
+    fn second_source_does_not_steal_default_without_flag() {
         let mut config = Config::default();
         config
-            .add_source("192.168.1.10".into(), "alice".into(), None, true)
+            .add_source("192.168.1.10".into(), "alice".into(), None, false)
+            .unwrap();
+        config
+            .add_source("192.168.1.20".into(), "bob".into(), None, false)
+            .unwrap();
+        assert_eq!(config.default_source.as_deref(), Some("192.168.1.10-alice"));
+    }
+
+    #[test]
+    fn explicit_default_flag_overrides_existing_default() {
+        let mut config = Config::default();
+        config
+            .add_source("192.168.1.10".into(), "alice".into(), None, false)
             .unwrap();
         config
             .add_source("192.168.1.10".into(), "bob".into(), None, true)

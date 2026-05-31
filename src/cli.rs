@@ -55,8 +55,10 @@ struct SourceAddArgs {
     username: String,
     #[arg(long)]
     name: Option<String>,
-    #[arg(long, default_value_t = false)]
-    no_default: bool,
+    /// Force this source to become the default. Without this flag a new
+    /// source only becomes the default if no default is configured yet.
+    #[arg(long = "default", default_value_t = false)]
+    make_default: bool,
 }
 
 #[derive(Debug, Args)]
@@ -138,7 +140,7 @@ fn run_source(command: SourceCommand) -> Result<()> {
                 args.address,
                 args.username.clone(),
                 args.name,
-                !args.no_default,
+                args.make_default,
             )?;
             progress::step(format!("storing credential for source {id}"));
             sudo_shelf_root(
