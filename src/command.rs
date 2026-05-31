@@ -108,16 +108,14 @@ pub mod tests {
 
     impl CommandRunner for MockRunner {
         fn run(&mut self, spec: CommandSpec) -> Result<CommandOutput> {
+            if self.outputs.is_empty() {
+                panic!(
+                    "MockRunner received an unexpected call with no queued output: {} {:?}",
+                    spec.program, spec.args
+                );
+            }
             self.calls.push(spec);
-            Ok(if self.outputs.is_empty() {
-                CommandOutput {
-                    status: 0,
-                    stdout: String::new(),
-                    stderr: String::new(),
-                }
-            } else {
-                self.outputs.remove(0)
-            })
+            Ok(self.outputs.remove(0))
         }
     }
 }
