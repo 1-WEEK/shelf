@@ -101,12 +101,7 @@ pub fn ensure_cifs_mounted(
         )));
     }
 
-    let options = format!(
-        "credentials={},uid={},gid={},file_mode=0660,dir_mode=0770,noserverino",
-        credential_file.display(),
-        owner_uid,
-        owner_gid
-    );
+    let options = cifs_mount_options(credential_file, owner_uid, owner_gid);
     let spec = CommandSpec::new("mount.cifs")
         .arg(expected_source.clone())
         .arg(mount_root.to_string_lossy().to_string())
@@ -135,6 +130,15 @@ pub fn ensure_cifs_mounted(
 
 pub fn expected_cifs_source(address: &str, top_level: &str) -> String {
     format!("//{address}/{top_level}")
+}
+
+pub fn cifs_mount_options(credential_file: &Path, owner_uid: u32, owner_gid: u32) -> String {
+    format!(
+        "credentials={},uid={},gid={},file_mode=0660,dir_mode=0770,noserverino",
+        credential_file.display(),
+        owner_uid,
+        owner_gid
+    )
 }
 
 pub fn ensure_bind_mounted(
@@ -211,6 +215,15 @@ pub fn unmount(runner: &mut impl CommandRunner, target: &Path) -> Result<()> {
 mod tests {
     use super::*;
     use crate::command::tests::MockRunner;
+
+    #[test]
+    fn cifs_mount_options_match_systemd_unit_options() {
+        let options = cifs_mount_options(Path::new("/etc/shelf/credentials/home.cred"), 1000, 1000);
+        assert_eq!(
+            options,
+            "credentials=/etc/shelf/credentials/home.cred,uid=1000,gid=1000,file_mode=0660,dir_mode=0770,noserverino"
+        );
+    }
 
     #[test]
     fn treats_missing_mountpoint_as_none() {

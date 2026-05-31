@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::command::{checked, CommandRunner, CommandSpec};
 use crate::error::IoContext;
-use crate::{paths, Result};
+use crate::{mounts, paths, Result};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnitFile {
@@ -29,12 +29,7 @@ pub fn cifs_unit_content(
     owner_uid: u32,
     owner_gid: u32,
 ) -> String {
-    let options = format!(
-        "credentials={},uid={},gid={},file_mode=0660,dir_mode=0770,noserverino",
-        credential_file.display(),
-        owner_uid,
-        owner_gid
-    );
+    let options = mounts::cifs_mount_options(credential_file, owner_uid, owner_gid);
     format!(
         "[Unit]\n\
 Description=shelf SMB mount //{address}/{top_level}\n\
