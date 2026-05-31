@@ -54,6 +54,27 @@ fn action_hint<'a>(key: &'a str, body: &'a str) -> Line<'a> {
     ])
 }
 
+fn wizard_step_order(step: WizardStep) -> usize {
+    match step {
+        WizardStep::LocalFolder => 0,
+        WizardStep::RemotePath => 1,
+        WizardStep::LoginSource => 2,
+        WizardStep::Review => 3,
+    }
+}
+
+fn step_glyph(index: usize, done: bool) -> &'static str {
+    if done {
+        return "✓";
+    }
+    match index {
+        0 => "①",
+        1 => "②",
+        2 => "③",
+        _ => "④",
+    }
+}
+
 fn source_list_item(source: &crate::config::SourceConfig, is_default: bool) -> ListItem<'static> {
     let mut spans = vec![
         Span::raw(source.id.clone()),
@@ -188,20 +209,26 @@ fn render_add_mount(frame: &mut Frame, area: Rect, app: &App) {
         ("Login source", WizardStep::LoginSource),
         ("Review", WizardStep::Review),
     ];
-    let step_line = steps
-        .iter()
-        .map(|(label, step)| {
-            let is_active = *step == app.add_mount.step;
-            let style = if is_active {
-                Style::default()
-                    .fg(RP_IRIS)
-                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
-            } else {
-                dim_style()
-            };
-            Span::styled(format!(" {label} "), style)
-        })
-        .collect::<Vec<_>>();
+    let current = wizard_step_order(app.add_mount.step);
+    let mut step_line: Vec<Span> = Vec::new();
+    for (i, (label, _step)) in steps.iter().enumerate() {
+        if i > 0 {
+            step_line.push(Span::styled("───", dim_style()));
+        }
+        let (glyph_style, label_style) = match i.cmp(&current) {
+            std::cmp::Ordering::Less => {
+                (Style::default().fg(RP_FOAM), Style::default().fg(RP_FOAM))
+            }
+            std::cmp::Ordering::Equal => (
+                Style::default().fg(RP_IRIS).add_modifier(Modifier::BOLD),
+                Style::default().fg(RP_IRIS).add_modifier(Modifier::BOLD),
+            ),
+            std::cmp::Ordering::Greater => (dim_style(), dim_style()),
+        };
+        let glyph = step_glyph(i, i < current);
+        step_line.push(Span::styled(format!(" {glyph} "), glyph_style));
+        step_line.push(Span::styled(format!("{label} "), label_style));
+    }
 
     frame.render_widget(
         Paragraph::new(vec![

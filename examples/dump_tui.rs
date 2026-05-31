@@ -78,9 +78,35 @@ fn dump(label: &str, screen: Screen) {
     println!();
 }
 
+fn dump_wizard(label: &str, step: shelf::tui::app::WizardStep) {
+    let (tx, _) = mpsc::channel();
+    let mut app = App::new(tx);
+    seed(&mut app);
+    app.screen = Screen::AddMount;
+    app.add_mount.step = step;
+    app.add_mount.local_folder = "/home/alice/Photos".into();
+    app.add_mount.remote_path = "/media/photos".into();
+
+    let backend = TestBackend::new(80, 18);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal.draw(|frame| view::render(frame, &app)).unwrap();
+    let buffer = terminal.backend().buffer().clone();
+
+    println!("─── {label} ───────────────────────────────────────────────────────────────");
+    for y in 0..18 {
+        let row: String = (0..80)
+            .map(|x| buffer[(x, y)].symbol().to_string())
+            .collect();
+        println!("{}", row.trim_end());
+    }
+    println!();
+}
+
 fn main() {
     dump("Home", Screen::Home);
     dump("MountDetail", Screen::MountDetail);
     dump("Sources", Screen::Sources);
     dump("SourceDetail", Screen::SourceDetail);
+    dump_wizard("AddMount @ step 1", shelf::tui::app::WizardStep::LocalFolder);
+    dump_wizard("AddMount @ step 3", shelf::tui::app::WizardStep::LoginSource);
 }
