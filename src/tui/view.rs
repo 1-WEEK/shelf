@@ -475,33 +475,51 @@ fn render_source_detail(frame: &mut Frame, area: Rect, app: &App) {
 
 fn render_help(frame: &mut Frame, area: Rect) {
     let term = Style::default().fg(RP_GOLD).add_modifier(Modifier::BOLD);
+    let section = Style::default().fg(RP_IRIS).add_modifier(Modifier::BOLD);
+
+    let term_line = |label: &'static str, body: &'static str| -> Line<'static> {
+        Line::from(vec![Span::styled(label, term), Span::raw(body)])
+    };
+    let keys_line = |scope: &'static str, body: &'static str| -> Line<'static> {
+        Line::from(vec![
+            Span::styled(format!("  {scope:<10}"), dim_style()),
+            Span::raw(body),
+        ])
+    };
+
     let text = vec![
-        Line::from(vec![
-            Span::styled("Source", term),
-            Span::from(": a saved login source for remote storage."),
-        ]),
-        Line::from(vec![
-            Span::styled("Remote path", term),
-            Span::from(": the path inside that remote storage, for example /media/movies."),
-        ]),
-        Line::from(vec![
-            Span::styled("Mount", term),
-            Span::from(": the mapping from a local folder to source:remote path."),
-        ]),
-        Line::from(vec![
-            Span::styled("Disconnect", term),
-            Span::from(": unmounts the local folder and keeps Shelf config."),
-        ]),
-        Line::from(vec![
-            Span::styled("Remove from Shelf", term),
-            Span::from(
-                ": removes Shelf config and systemd units. It does not delete remote files.",
-            ),
-        ]),
-        Line::from(vec![
-            Span::styled("Repair", term),
-            Span::from(": cleans stacked mounts, reapplies config, and tests write access."),
-        ]),
+        Line::from(Span::styled("Terms", section)),
+        term_line("Source", ": a saved login source for remote storage."),
+        term_line(
+            "Remote path",
+            ": the path inside that remote storage, for example /media/movies.",
+        ),
+        term_line(
+            "Mount",
+            ": the mapping from a local folder to source:remote path.",
+        ),
+        term_line(
+            "Disconnect",
+            ": unmounts the local folder and keeps Shelf config.",
+        ),
+        term_line(
+            "Remove from Shelf",
+            ": removes Shelf config and systemd units. It does not delete remote files.",
+        ),
+        term_line(
+            "Repair",
+            ": cleans stacked mounts, reapplies config, and tests write access.",
+        ),
+        Line::from(""),
+        Line::from(Span::styled("Keys", section)),
+        keys_line("Global", "q/Esc back   ?  help   j/k  move   Enter  accept"),
+        keys_line("Home", "a  add mount   s  sources   r  refresh   p  apply"),
+        keys_line("Mount", "x  disconnect   d  remove from Shelf   p  repair"),
+        keys_line(
+            "Sources",
+            "a  add   d  remove   Enter  detail / set default",
+        ),
+        keys_line("Wizard", "Enter  advance   Esc  back   Tab  cycle source"),
     ];
     frame.render_widget(
         Paragraph::new(text)
