@@ -1,4 +1,3 @@
-use std::io::Write;
 use std::process::{Command, Stdio};
 
 use crate::{Result, ShelfError};
@@ -7,7 +6,6 @@ use crate::{Result, ShelfError};
 pub struct CommandSpec {
     pub program: String,
     pub args: Vec<String>,
-    pub stdin: Option<Vec<u8>>,
 }
 
 impl CommandSpec {
@@ -15,7 +13,6 @@ impl CommandSpec {
         Self {
             program: program.into(),
             args: Vec::new(),
-            stdin: None,
         }
     }
 
@@ -26,11 +23,6 @@ impl CommandSpec {
 
     pub fn args(mut self, args: impl IntoIterator<Item = impl Into<String>>) -> Self {
         self.args.extend(args.into_iter().map(Into::into));
-        self
-    }
-
-    pub fn stdin(mut self, stdin: impl Into<Vec<u8>>) -> Self {
-        self.stdin = Some(stdin.into());
         self
     }
 }
@@ -59,35 +51,12 @@ impl CommandRunner for SystemRunner {
     fn run(&mut self, spec: CommandSpec) -> Result<CommandOutput> {
         let mut command = Command::new(&spec.program);
         command.args(&spec.args);
-        if spec.stdin.is_some() {
-            command.stdin(Stdio::piped());
-        }
         command.stdout(Stdio::piped()).stderr(Stdio::piped());
 
-        let mut child = command.spawn().map_err(|source| ShelfError::CommandIo {
+        let output = command.output().map_err(|source| ShelfError::CommandIo {
             program: spec.program.clone(),
             source,
         })?;
-
-        if let Some(stdin) = &spec.stdin {
-            let mut child_stdin = child.stdin.take().ok_or_else(|| ShelfError::CommandIo {
-                program: spec.program.clone(),
-                source: std::io::Error::new(std::io::ErrorKind::BrokenPipe, "stdin unavailable"),
-            })?;
-            child_stdin
-                .write_all(stdin)
-                .map_err(|source| ShelfError::CommandIo {
-                    program: spec.program.clone(),
-                    source,
-                })?;
-        }
-
-        let output = child
-            .wait_with_output()
-            .map_err(|source| ShelfError::CommandIo {
-                program: spec.program.clone(),
-                source,
-            })?;
         Ok(CommandOutput {
             status: output.status.code().unwrap_or(-1),
             stdout: String::from_utf8_lossy(&output.stdout).to_string(),
