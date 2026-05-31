@@ -40,7 +40,10 @@ pub fn handle(event: Event, app: &mut App) -> Result<()> {
                 }
                 return Ok(());
             }
-            Modal::Error(_) | Modal::Progress | Modal::Input => {
+            Modal::Progress => {
+                return Ok(());
+            }
+            Modal::Error(_) | Modal::Input => {
                 match key.code {
                     KeyCode::Esc | KeyCode::Enter => app.modal = None,
                     _ => {}
@@ -120,7 +123,7 @@ mod tests {
 
     use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 
-    use super::super::app::{App, Screen, SourceMode, WizardStep};
+    use super::super::app::{App, Modal, Screen, SourceMode, WizardStep};
     use super::handle;
 
     fn key_event(code: KeyCode) -> Event {
@@ -177,5 +180,18 @@ mod tests {
         handle(key_event(KeyCode::Char('q')), &mut app).unwrap();
 
         assert!(app.should_quit, "'q' outside text field must quit");
+    }
+
+    #[test]
+    fn progress_modal_cannot_be_dismissed_by_keys() {
+        let (tx, _) = mpsc::channel();
+        let mut app = App::new(tx);
+        app.modal = Some(Modal::Progress);
+
+        handle(key_event(KeyCode::Esc), &mut app).unwrap();
+        assert!(matches!(app.modal, Some(Modal::Progress)));
+
+        handle(key_event(KeyCode::Enter), &mut app).unwrap();
+        assert!(matches!(app.modal, Some(Modal::Progress)));
     }
 }

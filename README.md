@@ -26,10 +26,10 @@ Drop both into your `PATH`.
 Add an SMB source:
 
 ```
-shelf source add //nas.local/data --username alice
+shelf source add nas.local --username alice
 ```
 
-You will be prompted for the SMB password. This creates a source with an auto-generated ID like `nas-local` (set one explicitly with `--name`).
+You will be prompted for the SMB password. This creates a source with an auto-generated ID like `nas-local-alice` (set one explicitly with `--name`).
 
 Mount a path from that source to a local folder:
 
@@ -37,7 +37,7 @@ Mount a path from that source to a local folder:
 shelf mount ~/Videos /media/movies
 ```
 
-If you only have one source, it becomes the default. Otherwise pass `--source nas-local`.
+If you only have one source, it becomes the default. Otherwise pass `--source nas-local-alice`.
 
 Apply the config (this is the step that actually mounts):
 

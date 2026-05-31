@@ -380,18 +380,28 @@ fn run_command(args: RunArgs) -> Result<()> {
     let (config, config_path) = Config::load_user()?;
     let mut mounted_locals = Vec::new();
     for spec in &args.mounts {
-        let (local, remote) = parse_run_mount(spec)?;
-        let source_id = config.resolve_source_id(args.source.as_deref())?;
-        let source = config.source(&source_id)?;
-        let local_path = paths::expand_local_path(local)?;
-        progress::step(format!(
-            "mounting {} -> {}:{} for command",
-            local_path.display(),
-            source_id,
-            remote
-        ));
-        sudo_session_up(&config_path, source, &local_path, remote)?;
-        mounted_locals.push(local_path);
+        let result = (|| {
+            let (local, remote) = parse_run_mount(spec)?;
+            let source_id = config.resolve_source_id(args.source.as_deref())?;
+            let source = config.source(&source_id)?;
+            let local_path = paths::expand_local_path(local)?;
+            progress::step(format!(
+                "mounting {} -> {}:{} for command",
+                local_path.display(),
+                source_id,
+                remote
+            ));
+            sudo_session_up(&config_path, source, &local_path, remote)?;
+            mounted_locals.push(local_path);
+            Ok(())
+        })();
+
+        if let Err(err) = result {
+            if let Some(cleanup_err) = cleanup_run_mounts(&mounted_locals) {
+                return Err(setup_failure_with_cleanup_error(err, cleanup_err));
+            }
+            return Err(err);
+        }
     }
 
     let mut child = Command::new(&args.command[0]);
@@ -401,21 +411,7 @@ fn run_command(args: RunArgs) -> Result<()> {
         source,
     });
 
-    let mut cleanup_errors = Vec::new();
-    for local_path in mounted_locals.iter().rev() {
-        if let Err(err) = sudo_shelf_root(
-            [
-                "session-down".to_string(),
-                "--local-path".to_string(),
-                local_path.to_string_lossy().to_string(),
-            ],
-            None,
-        ) {
-            cleanup_errors.push(err);
-        }
-    }
-
-    if let Some(err) = aggregate_cleanup_errors(cleanup_errors) {
+    if let Some(err) = cleanup_run_mounts(&mounted_locals) {
         return Err(err);
     }
 
@@ -432,6 +428,32 @@ fn run_command(args: RunArgs) -> Result<()> {
     }
 }
 
+fn cleanup_run_mounts(mounted_locals: &[PathBuf]) -> Option<ShelfError> {
+    cleanup_mounted_locals(mounted_locals, |local_path| {
+        sudo_shelf_root(
+            [
+                "session-down".to_string(),
+                "--local-path".to_string(),
+                local_path.to_string_lossy().to_string(),
+            ],
+            None,
+        )
+    })
+}
+
+fn cleanup_mounted_locals<F>(mounted_locals: &[PathBuf], mut session_down: F) -> Option<ShelfError>
+where
+    F: FnMut(&Path) -> Result<()>,
+{
+    let mut cleanup_errors = Vec::new();
+    for local_path in mounted_locals.iter().rev() {
+        if let Err(err) = session_down(local_path) {
+            cleanup_errors.push(err);
+        }
+    }
+    aggregate_cleanup_errors(cleanup_errors)
+}
+
 fn aggregate_cleanup_errors(errors: Vec<ShelfError>) -> Option<ShelfError> {
     match errors.len() {
         0 => None,
@@ -445,6 +467,15 @@ fn aggregate_cleanup_errors(errors: Vec<ShelfError>) -> Option<ShelfError> {
             )))
         }
     }
+}
+
+fn setup_failure_with_cleanup_error(
+    setup_error: ShelfError,
+    cleanup_error: ShelfError,
+) -> ShelfError {
+    ShelfError::Validation(format!(
+        "failed to prepare run mount: {setup_error}\ncleanup also failed: {cleanup_error}"
+    ))
 }
 
 fn parse_run_mount(spec: &str) -> Result<(&str, &str)> {
@@ -572,5 +603,32 @@ mod tests {
         assert!(aggregated.contains("2 cleanup operations failed"));
         assert!(aggregated.contains("first failure"));
         assert!(aggregated.contains("second failure"));
+    }
+
+    #[test]
+    fn cleanup_mounted_locals_runs_in_reverse_order() {
+        let mounted = vec![PathBuf::from("/tmp/a"), PathBuf::from("/tmp/b")];
+        let mut calls = Vec::new();
+
+        let err = cleanup_mounted_locals(&mounted, |path| {
+            calls.push(path.to_path_buf());
+            Ok(())
+        });
+
+        assert!(err.is_none());
+        assert_eq!(
+            calls,
+            vec![PathBuf::from("/tmp/b"), PathBuf::from("/tmp/a")]
+        );
+    }
+
+    #[test]
+    fn setup_failure_reports_cleanup_failure_too() {
+        let setup = ShelfError::Validation("setup failed".into());
+        let cleanup = ShelfError::Validation("cleanup failed".into());
+        let err = setup_failure_with_cleanup_error(setup, cleanup).to_string();
+
+        assert!(err.contains("setup failed"));
+        assert!(err.contains("cleanup failed"));
     }
 }
