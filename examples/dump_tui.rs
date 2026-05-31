@@ -124,7 +124,42 @@ fn dump_with_modal(label: &str, modal: shelf::tui::app::Modal) {
     println!();
 }
 
+fn dump_empty(label: &str, with_source: bool) {
+    let (tx, _) = mpsc::channel();
+    let mut app = App::new(tx);
+    if with_source {
+        app.config.default_source = Some("nas-home".into());
+        app.config.sources = BTreeMap::from([(
+            "nas-home".into(),
+            SourceConfig {
+                id: "nas-home".into(),
+                address: "192.168.1.10".into(),
+                username: "alice".into(),
+                owner_uid: 1000,
+                owner_gid: 1000,
+            },
+        )]);
+    }
+    app.screen = Screen::Home;
+
+    let backend = TestBackend::new(80, 24);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal.draw(|frame| view::render(frame, &app)).unwrap();
+    let buffer = terminal.backend().buffer().clone();
+
+    println!("─── {label} ───────────────────────────────────────────────────────────────");
+    for y in 0..24 {
+        let row: String = (0..80)
+            .map(|x| buffer[(x, y)].symbol().to_string())
+            .collect();
+        println!("{}", row.trim_end());
+    }
+    println!();
+}
+
 fn main() {
+    dump_empty("Home (empty, no source)", false);
+    dump_empty("Home (empty, has source)", true);
     dump("Home", Screen::Home);
     dump("MountDetail", Screen::MountDetail);
     dump("Sources", Screen::Sources);

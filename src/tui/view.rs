@@ -161,21 +161,34 @@ fn render_header(frame: &mut Frame, area: Rect, app: &App) {
 
 fn render_home(frame: &mut Frame, area: Rect, app: &App) {
     if app.status_rows.is_empty() {
-        let vchunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Percentage(35), Constraint::Min(3)])
-            .split(area);
+        let needs_source = app.config.sources.is_empty();
+        let prompt = if needs_source {
+            Line::from(vec![
+                Span::raw("Press "),
+                Span::styled("s", key_style()),
+                Span::raw(" to add a login source, then "),
+                Span::styled("a", key_style()),
+                Span::raw(" to add a mount."),
+            ])
+        } else {
+            Line::from(vec![
+                Span::raw("Press "),
+                Span::styled("a", key_style()),
+                Span::raw(" to add your first mount."),
+            ])
+        };
         let text = vec![
-            Line::from("No mounts configured."),
             Line::from(""),
-            Line::from("Press s to add a login source, then a to add a mount."),
+            Line::from(Span::styled("No mounts yet.", dim_style())),
+            Line::from(""),
+            prompt,
         ];
         frame.render_widget(
             Paragraph::new(text)
                 .block(bordered_block("Home"))
                 .wrap(Wrap { trim: true })
                 .alignment(Alignment::Center),
-            vchunks[1],
+            area,
         );
         return;
     }
@@ -490,12 +503,6 @@ fn render_help(frame: &mut Frame, area: Rect) {
     let term_line = |label: &'static str, body: &'static str| -> Line<'static> {
         Line::from(vec![Span::styled(label, term), Span::raw(body)])
     };
-    let keys_line = |scope: &'static str, body: &'static str| -> Line<'static> {
-        Line::from(vec![
-            Span::styled(format!("  {scope:<10}"), dim_style()),
-            Span::raw(body),
-        ])
-    };
 
     let text = vec![
         Line::from(Span::styled("Terms", section)),
@@ -522,14 +529,48 @@ fn render_help(frame: &mut Frame, area: Rect) {
         ),
         Line::from(""),
         Line::from(Span::styled("Keys", section)),
-        keys_line("Global", "q/Esc back   ?  help   j/k  move   Enter  accept"),
-        keys_line("Home", "a  add mount   s  sources   r  refresh   p  apply"),
-        keys_line("Mount", "x  disconnect   d  remove from Shelf   p  repair"),
-        keys_line(
-            "Sources",
-            "a  add   d  remove   Enter  detail / set default",
+        key_row(
+            "Global",
+            &[
+                ("q/Esc", "back"),
+                ("?", "help"),
+                ("j/k", "move"),
+                ("Enter", "accept"),
+            ],
         ),
-        keys_line("Wizard", "Enter  advance   Esc  back   Tab  cycle source"),
+        key_row(
+            "Home",
+            &[
+                ("a", "add mount"),
+                ("s", "sources"),
+                ("r", "refresh"),
+                ("p", "apply"),
+            ],
+        ),
+        key_row(
+            "Mount",
+            &[
+                ("x", "disconnect"),
+                ("d", "remove from Shelf"),
+                ("p", "repair"),
+            ],
+        ),
+        key_row(
+            "Sources",
+            &[
+                ("a", "add"),
+                ("d", "remove"),
+                ("Enter", "detail / set default"),
+            ],
+        ),
+        key_row(
+            "Wizard",
+            &[
+                ("Enter", "advance"),
+                ("Esc", "back"),
+                ("Tab", "cycle source"),
+            ],
+        ),
     ];
     frame.render_widget(
         Paragraph::new(text)
@@ -537,6 +578,18 @@ fn render_help(frame: &mut Frame, area: Rect) {
             .wrap(Wrap { trim: true }),
         area,
     );
+}
+
+fn key_row(scope: &'static str, pairs: &[(&'static str, &'static str)]) -> Line<'static> {
+    let mut spans = vec![Span::styled(format!("  {scope:<10}"), dim_style())];
+    for (i, (key, action)) in pairs.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::raw("   "));
+        }
+        spans.push(Span::styled(*key, key_style()));
+        spans.push(Span::raw(format!(" {action}")));
+    }
+    Line::from(spans)
 }
 
 // ── Footer ─────────────────────────────────────────────────────────────
