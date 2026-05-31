@@ -2,7 +2,7 @@ use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{
-    Block, Borders, Clear, List, ListItem, Paragraph, Row, Table, TableState, Wrap,
+    Block, Borders, Cell, Clear, List, ListItem, Paragraph, Row, Table, TableState, Wrap,
 };
 use ratatui::Frame;
 
@@ -117,13 +117,12 @@ fn render_home(frame: &mut Frame, area: Rect, app: &App) {
     }
 
     let rows = app.status_rows.iter().map(|row| {
-        let state = health_label(row.health);
+        let (label, color) = health_label(row.health);
         Row::new(vec![
-            row.mount.local_path.clone(),
-            format!("{}:{}", row.mount.source_id, row.mount.remote_path),
-            state.0.to_string(),
+            Cell::from(row.mount.local_path.clone()),
+            Cell::from(format!("{}:{}", row.mount.source_id, row.mount.remote_path)),
+            Cell::from(format!("● {label}")).style(Style::default().fg(color)),
         ])
-        .style(Style::default().fg(state.1))
     });
     let mut state = TableState::default().with_selected(Some(app.selected_mount));
     let table = Table::new(
@@ -299,10 +298,10 @@ fn render_mount_detail(frame: &mut Frame, area: Rect, app: &App) {
             row.mount.source_id, row.mount.remote_path
         )),
         Line::from(format!("Source:  {}", row.mount.source_id)),
-        Line::from(Span::styled(
-            format!("State:   {label}"),
-            Style::default().fg(color),
-        )),
+        Line::from(vec![
+            Span::raw("State:   "),
+            Span::styled(format!("● {label}"), Style::default().fg(color)),
+        ]),
         Line::from("Startup: enabled by Shelf apply"),
         Line::from("Writable: tested during apply and repair"),
         Line::from(""),
