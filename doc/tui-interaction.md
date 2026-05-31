@@ -49,7 +49,7 @@ Modals are the only overlay. They capture all keyboard input until closed.
 
 | Type | Trigger | Dismiss | After-dismiss behavior |
 |------|---------|---------|----------------------|
-| Confirm | User initiates privileged action | `Enter` confirms, `Esc`/`n` cancels | Confirm spawns background task; cancel returns to caller screen |
+| Confirm | User initiates privileged action | `Enter` confirms, `Esc`/`n` cancels | Confirm spawns background task; cancel returns to caller screen. Destructive actions (`RemoveMount`, `RemoveSource`) render with a red border and a "Confirm destructive action" title; routine confirmations use the iris accent. Classification lives on `ConfirmAction::is_destructive`. |
 | Progress | Background task starts (non-Refresh) | Implicit: replaced by Success or Error | Never dismissed by user input |
 | Success | Mutating task completes successfully | Any key, or auto-dismiss after 1s | Navigates to list screen (see Auto-Navigation) |
 | Error | Validation failure or task failure | `Esc` / `Enter` | Returns to caller screen, no navigation |
@@ -165,19 +165,28 @@ Password entry happens outside the TUI, in the normal terminal.
 
 | Screen | Empty condition | Message |
 |--------|-----------------|---------|
-| Home | no mounts configured | "No mounts configured. Press s to add a login source, then a to add a mount." |
+| Home (no sources) | no mounts and no sources configured | "No mounts yet." + "Press s to add a login source, then a to add a mount." |
+| Home (with sources) | no mounts but at least one source | "No mounts yet." + "Press a to add your first mount." |
 | Sources | no sources configured | (list renders empty; footer still shows `a` to add) |
+
+The `s` and `a` keys in the prompt are rendered with `key_style` (gold + bold) so the next action is visually obvious.
 
 ## Health States
 
-Rendered in Home list and MountDetail:
+Rendered in Home list and MountDetail. Each state colour matches the [Rose Pine palette](https://github.com/rose-pine/rose-pine-palette/blob/main/palette.json) (main variant); see `src/tui/view.rs` for the constants.
 
-| State | Color | Meaning |
-|-------|-------|---------|
-| mounted | green | CIFS and bind mount both active |
-| needs attention | yellow | partial mount state (mismatch) |
-| not mounted | yellow | neither mount present |
-| broken | red | validation or runtime error |
+| State | Role | Meaning |
+|-------|------|---------|
+| mounted | foam | CIFS and bind mount both active |
+| needs attention | gold | partial mount state (mismatch) |
+| not mounted | gold | neither mount present |
+| broken | love | validation or runtime error |
+
+The Home table prefixes each state label with a `●` glyph styled in the same role colour. The table row body itself stays in default text so paths remain readable on broken mounts.
+
+## Add Mount Wizard Progress
+
+Each wizard step renders inside the panel header as a circled number (`①` `②` `③` `④`) followed by its label, joined by `───` separators. Completed steps switch to a `✓` glyph and the foam colour, the active step is iris bold, and future steps are subtle dim. The state is computed from `WizardStep` via `wizard_step_order`.
 
 ## Constraints for Future Changes
 
