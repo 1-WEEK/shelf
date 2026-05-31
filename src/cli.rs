@@ -401,7 +401,7 @@ fn run_command(args: RunArgs) -> Result<()> {
         source,
     });
 
-    let mut cleanup_error = None;
+    let mut cleanup_errors = Vec::new();
     for local_path in mounted_locals.iter().rev() {
         if let Err(err) = sudo_shelf_root(
             [
@@ -411,11 +411,11 @@ fn run_command(args: RunArgs) -> Result<()> {
             ],
             None,
         ) {
-            cleanup_error = Some(err);
+            cleanup_errors.push(err);
         }
     }
 
-    if let Some(err) = cleanup_error {
+    if let Some(err) = aggregate_cleanup_errors(cleanup_errors) {
         return Err(err);
     }
 
@@ -429,6 +429,21 @@ fn run_command(args: RunArgs) -> Result<()> {
             status: status.code().unwrap_or(-1),
             stderr: "child command exited unsuccessfully".into(),
         })
+    }
+}
+
+fn aggregate_cleanup_errors(errors: Vec<ShelfError>) -> Option<ShelfError> {
+    match errors.len() {
+        0 => None,
+        1 => errors.into_iter().next(),
+        _ => {
+            let count = errors.len();
+            let lines: Vec<String> = errors.iter().map(|err| err.to_string()).collect();
+            Some(ShelfError::Validation(format!(
+                "{count} cleanup operations failed:\n  - {}",
+                lines.join("\n  - ")
+            )))
+        }
     }
 }
 
@@ -533,5 +548,29 @@ mod tests {
             ("/tmp/videos", "/media/movies")
         );
         assert!(parse_run_mount("/tmp/videos").is_err());
+    }
+
+    #[test]
+    fn aggregate_cleanup_errors_returns_none_when_empty() {
+        assert!(aggregate_cleanup_errors(Vec::new()).is_none());
+    }
+
+    #[test]
+    fn aggregate_cleanup_errors_passes_through_single_error() {
+        let err = ShelfError::Validation("solo".into());
+        let aggregated = aggregate_cleanup_errors(vec![err]).unwrap();
+        assert_eq!(aggregated.to_string(), "solo");
+    }
+
+    #[test]
+    fn aggregate_cleanup_errors_lists_every_failure_when_many() {
+        let errors = vec![
+            ShelfError::Validation("first failure".into()),
+            ShelfError::Validation("second failure".into()),
+        ];
+        let aggregated = aggregate_cleanup_errors(errors).unwrap().to_string();
+        assert!(aggregated.contains("2 cleanup operations failed"));
+        assert!(aggregated.contains("first failure"));
+        assert!(aggregated.contains("second failure"));
     }
 }
